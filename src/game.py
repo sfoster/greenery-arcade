@@ -52,6 +52,8 @@ class Player(arcade.Sprite):
         self.facing = FACING_SOUTH
         self.texture = self.texture_direction[self.facing][self.frame_idx]
 
+        self.score = 0;
+
     def update(self):
         self.previous_posn = Vec2(self.center_x, self.center_y)
         self.center_x += self.change_x
@@ -91,124 +93,157 @@ class Player(arcade.Sprite):
         self.texture = self.texture_direction[self.facing][self.frame_idx]
         print(f"facing: {self.facing}, frame_idx: {self.frame_idx}, len: {len(self.texture_direction[self.facing])}")
 
+class TextLabel():
+  def __init__(self, text, start_x, start_y):
+    self.start_x = start_x
+    self.start_y = start_y
+    self.color = [255,255,255]
+    self.bgcolor = [0,0,0]
+
+    self.text = arcade.Text(text, start_x, start_y)
+    width,height = self.text.content_size
+    self.back = arcade.create_ellipse(start_x + width/2, start_y + height/2, width+4, height+4, self.bgcolor)
+
+  def draw(self):
+    self.text.draw()
+
 class MyGame(arcade.Window):
     def __init__(self, width, height, title):
-        # Call the parent class initializer
-        super().__init__(width, height, title)
+      # Call the parent class initializer
+      super().__init__(width, height, title)
 
-        # Variables that will hold sprite lists
-        self.player_sprite_list = None
+      # Variables that will hold sprite lists
+      self.player_sprite_list = None
 
-        # Set up the player info
-        self.player_sprite = None
+      # Set up the player info
+      self.player_sprite = None
 
-        self.wall_list = None
+      self.wall_list = None
 
-        # Set the background color
-        arcade.set_background_color(arcade.color.AMAZON)
+      # Set the background color
+      arcade.set_background_color(arcade.color.AMAZON)
 
-        # Track the current state of what key is pressed
-        self.left_pressed = False
-        self.right_pressed = False
-        self.up_pressed = False
-        self.down_pressed = False
+      # Track the current state of what key is pressed
+      self.left_pressed = False
+      self.right_pressed = False
+      self.up_pressed = False
+      self.down_pressed = False
 
     def setup(self):
-        """ Set up the game and initialize the variables. """
+      """ Set up the game and initialize the variables. """
 
-        # Sprite lists
-        self.player_sprite_list = arcade.SpriteList()
-        self.wall_list = arcade.SpriteList()
+      # Sprite lists
+      self.player_sprite_list = arcade.SpriteList()
+      self.wall_list = arcade.SpriteList()
+      self.coin_list = arcade.SpriteList()
 
-        # Set up the player
-        self.setup_player()
+      # Set up the player
+      self.setup_player()
+      self.score = TextLabel("0", 20, 20)
 
-        # Set up the level's wall
-        self.setup_walls()
+      # Set up the level's wall
+      self.setup_walls()
+      self.setup_coins()
 
-        self.physics_engine = arcade.PhysicsEngineSimple(self.player_sprite,
-                                                         self.wall_list)
+      self.physics_engine = arcade.PhysicsEngineSimple(self.player_sprite,
+                                                       self.wall_list)
 
     def setup_player(self):
-        self.player_sprite = Player()
-        self.player_sprite.center_x = SCREEN_WIDTH / 2
-        self.player_sprite.center_y = SCREEN_HEIGHT / 2
-        self.player_sprite_list.append(self.player_sprite)
+      self.player_sprite = Player()
+      self.player_sprite.center_x = SCREEN_WIDTH / 2
+      self.player_sprite.center_y = SCREEN_HEIGHT / 2
+      self.player_sprite_list.append(self.player_sprite)
 
     def setup_walls(self):
-        # -- Set up the walls
-        # Create a row of boxes
-        for x in range(173, 650, 64):
-            wall = arcade.Sprite(":resources:images/tiles/boxCrate_double.png",
-                                 SPRITE_SCALING)
-            wall.center_x = x
-            wall.center_y = 200
-            self.wall_list.append(wall)
+      # -- Set up the walls
+      # Create a row of boxes
+      for x in range(173, 650, 64):
+          wall = arcade.Sprite(":resources:images/tiles/boxCrate_double.png",
+                               SPRITE_SCALING)
+          wall.center_x = x
+          wall.center_y = 200
+          self.wall_list.append(wall)
 
-        # Create a column of boxes
-        for y in range(273, 500, 64):
-            wall = arcade.Sprite(":resources:images/tiles/boxCrate_double.png",
-                                 SPRITE_SCALING)
-            wall.center_x = 465
-            wall.center_y = y
-            self.wall_list.append(wall)
+      # Create a column of boxes
+      for y in range(273, 500, 64):
+          wall = arcade.Sprite(":resources:images/tiles/boxCrate_double.png",
+                               SPRITE_SCALING)
+          wall.center_x = 465
+          wall.center_y = y
+          self.wall_list.append(wall)
+
+    def setup_coins(self):
+      for i in range(5):
+        coin = arcade.Sprite(":resources:images/items/coinGold.png", 0.25)
+        coin.center_x = 150
+        coin.center_y = 50 + (i*30)
+        self.coin_list.append(coin)
 
     def on_draw(self):
-        # This command has to happen before we start drawing
-        self.clear()
+      # This command has to happen before we start drawing
+      self.clear()
 
-        # Draw all the sprites.
-        self.player_sprite_list.draw()
-        self.wall_list.draw()
+      # Draw all the sprites.
+      self.player_sprite_list.draw()
+      self.wall_list.draw()
+      self.coin_list.draw()
+      self.score.text.text = str(self.player_sprite.score)
+      self.score.draw()
 
     def on_update(self, delta_time):
-        """ Movement and game logic """
+      """ Movement and game logic """
 
-        # Call update on all sprites (The sprites don't do much in this
-        # example though.)
-        self.player_sprite_list.update()
-        self.physics_engine.update()
-        self.player_sprite.post_update()
+      # Call update on all sprites (The sprites don't do much in this
+      # example though.)
+      self.player_sprite_list.update()
+      self.physics_engine.update()
+
+      coin_hits = self.player_sprite.collides_with_list(self.coin_list)
+      for coin in coin_hits:
+        print(f"hit a coin: {len(coin_hits)}")
+        self.coin_list.remove(coin)
+        self.player_sprite.score += 1
+      self.player_sprite.post_update()
 
 
     def update_player_speed(self):
-        # Calculate speed based on the keys pressed
-        direction = Vec2(0, 0)
+      # Calculate speed based on the keys pressed
+      direction = Vec2(0, 0)
 
-        if self.up_pressed and not self.down_pressed:
-            direction.y = 1
-        elif self.down_pressed and not self.up_pressed:
-            direction.y = -1
-        if self.left_pressed and not self.right_pressed:
-            direction.x = -1
-        elif self.right_pressed and not self.left_pressed:
-            direction.x = 1
-        scaled_change = direction.from_magnitude(MOVEMENT_SPEED)
-        # scale the movement so we get equal speed on diagonals
-        self.player_sprite.change_x = scaled_change.x
-        self.player_sprite.change_y = scaled_change.y
+      if self.up_pressed and not self.down_pressed:
+          direction.y = 1
+      elif self.down_pressed and not self.up_pressed:
+          direction.y = -1
+      if self.left_pressed and not self.right_pressed:
+          direction.x = -1
+      elif self.right_pressed and not self.left_pressed:
+          direction.x = 1
+      scaled_change = direction.from_magnitude(MOVEMENT_SPEED)
+      # scale the movement so we get equal speed on diagonals
+      self.player_sprite.change_x = scaled_change.x
+      self.player_sprite.change_y = scaled_change.y
 
     def on_key_press(self, key, modifiers):
-        if key == arcade.key.UP:
-            self.up_pressed = True
-        elif key == arcade.key.DOWN:
-            self.down_pressed = True
-        elif key == arcade.key.LEFT:
-            self.left_pressed = True
-        elif key == arcade.key.RIGHT:
-            self.right_pressed = True
-        self.update_player_speed()
+      if key == arcade.key.UP:
+          self.up_pressed = True
+      elif key == arcade.key.DOWN:
+          self.down_pressed = True
+      elif key == arcade.key.LEFT:
+          self.left_pressed = True
+      elif key == arcade.key.RIGHT:
+          self.right_pressed = True
+      self.update_player_speed()
 
     def on_key_release(self, key, modifiers):
-        if key == arcade.key.UP:
-            self.up_pressed = False
-        elif key == arcade.key.DOWN:
-            self.down_pressed = False
-        elif key == arcade.key.LEFT:
-            self.left_pressed = False
-        elif key == arcade.key.RIGHT:
-            self.right_pressed = False
-        self.update_player_speed()
+      if key == arcade.key.UP:
+          self.up_pressed = False
+      elif key == arcade.key.DOWN:
+          self.down_pressed = False
+      elif key == arcade.key.LEFT:
+          self.left_pressed = False
+      elif key == arcade.key.RIGHT:
+          self.right_pressed = False
+      self.update_player_speed()
 
 def main():
     """ Main function """
