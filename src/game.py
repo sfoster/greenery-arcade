@@ -11,15 +11,19 @@ python -m arcade.examples.sprite_face_left_or_right
 """
 
 import arcade
+import math
 from pyglet.math import Vec2
 
 SPRITE_SCALING = 4
+SPRITE_SCALING = 0.5
 
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 SCREEN_TITLE = "Work-in-progress"
 
 MOVEMENT_SPEED = 4
+TRAVEL_PER_WALK_FRAME = 8
+WALK_ANIM_FRAMES = 4
 
 FACING_NORTH = 0
 FACING_EAST = 1
@@ -30,9 +34,10 @@ FACING_WEST = 3
 class Player(arcade.Sprite):
     def __init__(self):
         super().__init__()
-        self.scale = SPRITE_SCALING
+        # The player sprite should be scaled up unlike the others
+        self.scale = 4
         self.frame_idx = 0
-        self.move_change = Vec2()
+        self.previous_posn = Vec2()
         textures = arcade.load_spritesheet("../resources/Hero.png", 16, 16, 8, 24, 0, "None")
         self.texture_direction = [
           textures[0:4],
@@ -40,50 +45,53 @@ class Player(arcade.Sprite):
           textures[4:8],
           textures[8:12],
         ]
+        # The cumulative distance we travelled in the current direction
+        # Used to set the walking animation frame
         self.travelled = 0
         # By default, face down.
         self.facing = FACING_SOUTH
         self.texture = self.texture_direction[self.facing][self.frame_idx]
 
     def update(self):
-        self.center_x += self.move_change.x
-        self.center_y += self.move_change.y
-        moved = self.move_change.mag
-        was_facing = self.facing
+        self.previous_posn = Vec2(self.center_x, self.center_y)
+        self.center_x += self.change_x
+        self.center_y += self.change_y
+        self.was_facing = self.facing
+        movement = Vec2(self.change_x, self.change_y)
 
-        if moved > 0:
+        if movement.mag > 0:
           # Figure out if we should face left or right
-          if self.move_change.x < 0:
+          if self.change_x < 0:
             self.facing = FACING_WEST
-          elif self.move_change.x > 0:
+          elif self.change_x > 0:
             self.facing = FACING_EAST
-          if self.move_change.y < 0:
+          if self.change_y < 0:
             self.facing = FACING_SOUTH
-          elif self.move_change.y > 0:
+          elif self.change_y > 0:
             self.facing = FACING_NORTH
-
-          if was_facing == self.facing:
-            self.travelled += moved
-          else:
-            self.frame_idx = 0
-            self.travelled = 0
-
-          # Figure out if we need to advance the animatoin
-          if self.travelled > 8:
-            self.frame_idx += 1
-            self.travelled = 0
-          if self.frame_idx >= 4:
-            self.frame_idx = 0
-          print(f"facing: {self.facing}, frame_idx: {self.frame_idx}, len: {len(self.texture_direction[self.facing])}")
         else:
+          # set back to the idle/at-rest frame
           self.frame_idx = 0
+          self.travelled = 0
+        if self.was_facing != self.facing:
+          # if we turned, reset to the first frame
+          self.frame_idx = 0
+          self.travelled = 0
+
+
+    def post_update(self):
+      # after updating physics, did we actually move?
+      moved = Vec2(self.center_x, self.center_y) - self.previous_posn;
+
+      if self.was_facing == self.facing and moved.mag > 0:
+        # we continued in the same direction
+        self.travelled += moved.mag
+        # Move to next animation (of 4) frame each 8px of travel
+        self.frame_idx = math.floor(self.travelled / TRAVEL_PER_WALK_FRAME) % WALK_ANIM_FRAMES
         self.texture = self.texture_direction[self.facing][self.frame_idx]
+        print(f"facing: {self.facing}, frame_idx: {self.frame_idx}, len: {len(self.texture_direction[self.facing])}")
 
 class MyGame(arcade.Window):
-    """
-    Main application class.
-    """
-
     def __init__(self, width, height, title):
         # Call the parent class initializer
         super().__init__(width, height, title)
@@ -94,6 +102,8 @@ class MyGame(arcade.Window):
         # Set up the player info
         self.player_sprite = None
 
+        self.wall_list = None
+
         # Set the background color
         arcade.set_background_color(arcade.color.AMAZON)
 
@@ -103,33 +113,45 @@ class MyGame(arcade.Window):
         self.up_pressed = False
         self.down_pressed = False
 
-
     def setup(self):
         """ Set up the game and initialize the variables. """
 
         # Sprite lists
         self.player_sprite_list = arcade.SpriteList()
+        self.wall_list = arcade.SpriteList()
 
         # Set up the player
+        self.setup_player()
+
+        # Set up the level's wall
+        self.setup_walls()
+
+        self.physics_engine = arcade.PhysicsEngineSimple(self.player_sprite,
+                                                         self.wall_list)
+
+    def setup_player(self):
         self.player_sprite = Player()
         self.player_sprite.center_x = SCREEN_WIDTH / 2
         self.player_sprite.center_y = SCREEN_HEIGHT / 2
         self.player_sprite_list.append(self.player_sprite)
 
-    def update_player_speed(self):
-        # Calculate speed based on the keys pressed
-        move_change = Vec2(0, 0)
+    def setup_walls(self):
+        # -- Set up the walls
+        # Create a row of boxes
+        for x in range(173, 650, 64):
+            wall = arcade.Sprite(":resources:images/tiles/boxCrate_double.png",
+                                 SPRITE_SCALING)
+            wall.center_x = x
+            wall.center_y = 200
+            self.wall_list.append(wall)
 
-        if self.up_pressed and not self.down_pressed:
-            move_change.y = 1
-        elif self.down_pressed and not self.up_pressed:
-            move_change.y = -1
-        if self.left_pressed and not self.right_pressed:
-            move_change.x = -1
-        elif self.right_pressed and not self.left_pressed:
-            move_change.x = 1
-        # scale the movement so we get equal speed on diagonals
-        self.player_sprite.move_change = move_change.from_magnitude(MOVEMENT_SPEED)
+        # Create a column of boxes
+        for y in range(273, 500, 64):
+            wall = arcade.Sprite(":resources:images/tiles/boxCrate_double.png",
+                                 SPRITE_SCALING)
+            wall.center_x = 465
+            wall.center_y = y
+            self.wall_list.append(wall)
 
     def on_draw(self):
         # This command has to happen before we start drawing
@@ -137,6 +159,7 @@ class MyGame(arcade.Window):
 
         # Draw all the sprites.
         self.player_sprite_list.draw()
+        self.wall_list.draw()
 
     def on_update(self, delta_time):
         """ Movement and game logic """
@@ -144,6 +167,26 @@ class MyGame(arcade.Window):
         # Call update on all sprites (The sprites don't do much in this
         # example though.)
         self.player_sprite_list.update()
+        self.physics_engine.update()
+        self.player_sprite.post_update()
+
+
+    def update_player_speed(self):
+        # Calculate speed based on the keys pressed
+        direction = Vec2(0, 0)
+
+        if self.up_pressed and not self.down_pressed:
+            direction.y = 1
+        elif self.down_pressed and not self.up_pressed:
+            direction.y = -1
+        if self.left_pressed and not self.right_pressed:
+            direction.x = -1
+        elif self.right_pressed and not self.left_pressed:
+            direction.x = 1
+        scaled_change = direction.from_magnitude(MOVEMENT_SPEED)
+        # scale the movement so we get equal speed on diagonals
+        self.player_sprite.change_x = scaled_change.x
+        self.player_sprite.change_y = scaled_change.y
 
     def on_key_press(self, key, modifiers):
         if key == arcade.key.UP:
