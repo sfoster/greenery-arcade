@@ -94,6 +94,11 @@ class Player(arcade.Sprite):
         # print(f"facing: {self.facing}, frame_idx: {self.frame_idx}, len: {len(self.texture_direction[self.facing])}")
 
 
+class GroundSplat(arcade.Sprite):
+    def __init__(self, *args):
+        super(GroundSplat, self).__init__(*args)
+
+
 class TextLabel():
   def __init__(self, text, start_x, start_y):
     self.start_x = start_x
@@ -146,17 +151,19 @@ class MyGame(arcade.Window):
 
       # Sprite lists
       self.player_sprite_list = arcade.SpriteList()
+      self.terrain_list = arcade.SpriteList()
       self.wall_list = arcade.SpriteList()
-      self.coin_list = arcade.SpriteList()
+      self.target_list = arcade.SpriteList()
 
       # Set up the player
       self.setup_player()
       self.score = TextLabel("Score: 0   ", 80, 6)
       self.fps = TextLabel("00", 6, 6)
 
-      # Set up the level's wall
+      # Set up the level's walls etc.
+      self.setup_terrain()
       self.setup_walls()
-      self.setup_coins()
+      self.setup_targets()
 
       self.physics_engine = arcade.PhysicsEngineSimple(self.player_sprite,
                                                        self.wall_list)
@@ -166,6 +173,31 @@ class MyGame(arcade.Window):
       self.player_sprite.center_x = SCREEN_WIDTH / 2
       self.player_sprite.center_y = SCREEN_HEIGHT / 2
       self.player_sprite_list.append(self.player_sprite)
+
+    def place_grass(self, center_x, center_y):
+      TERRAIN_TILE_SCALE = 2;
+      grass = arcade.Sprite("../resources/grass_tileset_16x16.png",
+                             TERRAIN_TILE_SCALE, 
+                             64,0, # x, y offsets into the tileset
+                             32,32, # width, height
+                           )
+      grass.center_x = center_x
+      grass.center_y = center_y
+      self.terrain_list.append(grass)
+
+    def place_puddle(self, center_x, center_y):
+      puddle = GroundSplat("../resources/grass_tileset_16x16.png",
+                             1, 
+                             0,144, # x, y offsets into the tileset
+                             64,64, # width, height
+                           )
+      puddle.center_x = center_x
+      puddle.center_y = center_y
+      self.target_list.append(puddle)
+
+    def setup_terrain(self):
+      self.place_grass(100, 400)
+
 
     def setup_walls(self):
       # -- Set up the walls
@@ -185,21 +217,21 @@ class MyGame(arcade.Window):
           wall.center_y = y
           self.wall_list.append(wall)
 
-    def setup_coins(self):
-      for i in range(5):
-        coin = arcade.Sprite(":resources:images/items/coinGold.png", 0.25)
-        coin.center_x = 150
-        coin.center_y = 50 + (i*30)
-        self.coin_list.append(coin)
+    def setup_targets(self):
+      self.place_puddle(100, 400)
+      self.place_puddle(60, 60)
+      self.place_puddle(700, 100)
+
 
     def on_draw(self):
       # This command has to happen before we start drawing
       self.clear()
 
       # Draw all the sprites.
-      self.player_sprite_list.draw()
+      self.terrain_list.draw()
       self.wall_list.draw()
-      self.coin_list.draw()
+      self.player_sprite_list.draw()
+      self.target_list.draw()
       self.score.draw()
       self.fps.draw()
 
@@ -209,11 +241,13 @@ class MyGame(arcade.Window):
       self.player_sprite_list.update()
       self.physics_engine.update()
 
-      coin_hits = self.player_sprite.collides_with_list(self.coin_list)
-      for coin in coin_hits:
-        # print(f"hit a coin: {len(coin_hits)}")
-        self.coin_list.remove(coin)
+      target_hits = self.player_sprite.collides_with_list(self.target_list)
+      for target in target_hits:
+        print(f"hit a target: {type(target).__name__}")
+        self.target_list.remove(target)
         self.player_sprite.score += 1
+        if isinstance(target, GroundSplat):
+          self.place_grass(target.center_x, target.center_y)
 
       # post-update
       self.player_sprite.post_update()
