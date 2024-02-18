@@ -91,7 +91,8 @@ class Player(arcade.Sprite):
         # Move to next animation (of 4) frame each 8px of travel
         self.frame_idx = math.floor(self.travelled / TRAVEL_PER_WALK_FRAME) % WALK_ANIM_FRAMES
         self.texture = self.texture_direction[self.facing][self.frame_idx]
-        print(f"facing: {self.facing}, frame_idx: {self.frame_idx}, len: {len(self.texture_direction[self.facing])}")
+        # print(f"facing: {self.facing}, frame_idx: {self.frame_idx}, len: {len(self.texture_direction[self.facing])}")
+
 
 class TextLabel():
   def __init__(self, text, start_x, start_y):
@@ -100,11 +101,22 @@ class TextLabel():
     self.color = [255,255,255]
     self.bgcolor = [0,0,0]
 
-    self.text = arcade.Text(text, start_x, start_y)
-    width,height = self.text.content_size
-    self.back = arcade.create_ellipse(start_x + width/2, start_y + height/2, width+4, height+4, self.bgcolor)
+    self.text = arcade.Text(text, start_x, start_y, self.color)
+    self.text.font_name="Kenney Pixel Square"
+
+    text_width, text_height = self.text.content_size
+
+    self.back = arcade.create_rectangle_filled(
+      start_x + text_width/2+4, start_y + text_height/2 -2,
+      text_width+26, text_height+8, 
+      self.bgcolor
+    )
+
+  def update(self, value):
+    self.text.text = str(value)
 
   def draw(self):
+    self.back.draw()
     self.text.draw()
 
 class MyGame(arcade.Window):
@@ -139,7 +151,8 @@ class MyGame(arcade.Window):
 
       # Set up the player
       self.setup_player()
-      self.score = TextLabel("0", 20, 20)
+      self.score = TextLabel("Score: 0   ", 80, 6)
+      self.fps = TextLabel("00", 6, 6)
 
       # Set up the level's wall
       self.setup_walls()
@@ -187,23 +200,26 @@ class MyGame(arcade.Window):
       self.player_sprite_list.draw()
       self.wall_list.draw()
       self.coin_list.draw()
-      self.score.text.text = str(self.player_sprite.score)
       self.score.draw()
+      self.fps.draw()
+
 
     def on_update(self, delta_time):
       """ Movement and game logic """
-
-      # Call update on all sprites (The sprites don't do much in this
-      # example though.)
       self.player_sprite_list.update()
       self.physics_engine.update()
 
       coin_hits = self.player_sprite.collides_with_list(self.coin_list)
       for coin in coin_hits:
-        print(f"hit a coin: {len(coin_hits)}")
+        # print(f"hit a coin: {len(coin_hits)}")
         self.coin_list.remove(coin)
         self.player_sprite.score += 1
+
+      # post-update
       self.player_sprite.post_update()
+
+      self.score.update(f"Score: {self.player_sprite.score}")
+      self.fps.update( f"{arcade.get_fps():.0f}" )
 
 
     def update_player_speed(self):
@@ -249,6 +265,7 @@ def main():
     """ Main function """
     window = MyGame(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE)
     window.setup()
+    arcade.enable_timings()
     arcade.run()
 
 
