@@ -1,21 +1,18 @@
 """
-Sprite Facing Left or Right
-Face left or right depending on our direction
-
-Simple program to show basic sprite usage.
-
-Artwork from https://kenney.nl
-
-If Python and Arcade are installed, this example can be run from the command line with:
-python -m arcade.examples.sprite_face_left_or_right
+Prototype of a simple cleanup / castle-defense game
 """
 
 import arcade
 import math
 from pyglet.math import Vec2
+from PIL import Image
+from copy import deepcopy
 
+DEBUG = False
 SPRITE_SCALING = 4
 SPRITE_SCALING = 0.5
+
+SOUND_FX_VOLUME = 0.8
 
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
@@ -30,74 +27,183 @@ FACING_EAST = 1
 FACING_SOUTH = 2
 FACING_WEST = 3
 
+empty_32x32 = arcade.Texture("empty_32x32", Image.new("RGBA", (32,32), color=(0,0,0,0)))
+g_game = None
 
-class Player(arcade.Sprite):
-    def __init__(self):
-        super().__init__()
-        # The player sprite should be scaled up unlike the others
-        self.scale = 4
-        self.frame_idx = 0
-        self.previous_posn = Vec2()
-        textures = arcade.load_spritesheet("../resources/Hero.png", 16, 16, 8, 24, 0, "None")
-        self.texture_direction = [
-          textures[0:4],
-          textures[12:16],
-          textures[4:8],
-          textures[8:12],
-        ]
-        # The cumulative distance we travelled in the current direction
-        # Used to set the walking animation frame
-        self.travelled = 0
-        # By default, face down.
+def get_facing_vec2(entity):
+  direction = Vec2()
+  if entity.facing == FACING_NORTH:
+    direction.y = 1
+  elif entity.facing == FACING_SOUTH:
+    direction.y = -1
+  elif entity.facing == FACING_EAST:
+    direction.x = 1
+  elif entity.facing == FACING_WEST:
+    direction.x = -1
+  return direction
+
+class SpriteEntity(arcade.Sprite):
+  def __init__(self, game, *args):
+    self.game = game
+    super(SpriteEntity, self).__init__(*args)
+
+class Player(SpriteEntity):
+  def __init__(self, *args):
+    super(Player, self).__init__(*args)
+    # The player sprite should be scaled up unlike the others
+    self.scale = 4
+    self.frame_idx = 0
+    self.previous_posn = Vec2()
+    textures = arcade.load_spritesheet("../resources/Hero.png", 16, 16, 8, 24, 0, "None")
+    self.texture_direction = [
+      textures[0:4],
+      textures[12:16],
+      textures[4:8],
+      textures[8:12],
+    ]
+    # The cumulative distance we travelled in the current direction
+    # Used to set the walking animation frame
+    self.travelled = 0
+    # By default, face down.
+    self.facing = FACING_SOUTH
+    self.texture = self.texture_direction[self.facing][self.frame_idx]
+
+    self.score = 0;
+
+    self.tool = Tool(self, self.game)
+    self.tool_active = False
+
+  def get_position_v2(self):
+    return Vec2(self.center_x, self.center_y)
+
+  def apply_tool(self, direction):
+    posn = self.get_position_v2()
+    if self.tool and self.tool.can_use(posn, direction):
+      print(f"apply_tool, game: {self.game.name}")
+      self.game.attack_list.append(self.tool.use_at_point(posn, direction))
+
+  def on_update(self, dt):
+    self.previous_posn = self.get_position_v2()
+    self.center_x += self.change_x
+    self.center_y += self.change_y
+    self.was_facing = self.facing
+    movement = Vec2(self.change_x, self.change_y)
+
+    if movement.mag > 0:
+      # Figure out if we should face left or right
+      if self.change_x < 0:
+        self.facing = FACING_WEST
+      elif self.change_x > 0:
+        self.facing = FACING_EAST
+      if self.change_y < 0:
         self.facing = FACING_SOUTH
-        self.texture = self.texture_direction[self.facing][self.frame_idx]
+      elif self.change_y > 0:
+        self.facing = FACING_NORTH
+    else:
+      # set back to the idle/at-rest frame
+      self.frame_idx = 0
+      self.travelled = 0
+    if self.was_facing != self.facing:
+      # if we turned, reset to the first frame
+      self.frame_idx = 0
+      self.travelled = 0
 
-        self.score = 0;
+    self.tool.on_update(dt)
+    if self.tool_active:
+      self.apply_tool(get_facing_vec2(self))
+    else:
+      pass
 
-    def update(self):
-        self.previous_posn = Vec2(self.center_x, self.center_y)
-        self.center_x += self.change_x
-        self.center_y += self.change_y
-        self.was_facing = self.facing
-        movement = Vec2(self.change_x, self.change_y)
+  def post_update(self):
+    # after updating physics, did we actually move?
+    moved = Vec2(self.center_x, self.center_y) - self.previous_posn;
 
-        if movement.mag > 0:
-          # Figure out if we should face left or right
-          if self.change_x < 0:
-            self.facing = FACING_WEST
-          elif self.change_x > 0:
-            self.facing = FACING_EAST
-          if self.change_y < 0:
-            self.facing = FACING_SOUTH
-          elif self.change_y > 0:
-            self.facing = FACING_NORTH
-        else:
-          # set back to the idle/at-rest frame
-          self.frame_idx = 0
-          self.travelled = 0
-        if self.was_facing != self.facing:
-          # if we turned, reset to the first frame
-          self.frame_idx = 0
-          self.travelled = 0
-
-
-    def post_update(self):
-      # after updating physics, did we actually move?
-      moved = Vec2(self.center_x, self.center_y) - self.previous_posn;
-
-      if self.was_facing == self.facing and moved.mag > 0:
-        # we continued in the same direction
-        self.travelled += moved.mag
-        # Move to next animation (of 4) frame each 8px of travel
-        self.frame_idx = math.floor(self.travelled / TRAVEL_PER_WALK_FRAME) % WALK_ANIM_FRAMES
-        self.texture = self.texture_direction[self.facing][self.frame_idx]
-        # print(f"facing: {self.facing}, frame_idx: {self.frame_idx}, len: {len(self.texture_direction[self.facing])}")
-
+    if self.was_facing == self.facing and moved.mag > 0:
+      # we continued in the same direction
+      self.travelled += moved.mag
+      # Move to next animation (of 4) frame each 8px of travel
+      self.frame_idx = math.floor(self.travelled / TRAVEL_PER_WALK_FRAME) % WALK_ANIM_FRAMES
+      self.texture = self.texture_direction[self.facing][self.frame_idx]
+      # print(f"facing: {self.facing}, frame_idx: {self.frame_idx}, len: {len(self.texture_direction[self.facing])}")
 
 class GroundSplat(arcade.Sprite):
-    def __init__(self, *args):
-        super(GroundSplat, self).__init__(*args)
+  def __init__(self, *args):
+      super(GroundSplat, self).__init__(*args)
 
+class Whack(SpriteEntity):
+  def __init__(self, filename, sound_name, *args):
+    super(Whack, self).__init__(*args)
+    print(f"Whack init, game is: {self.game.name}")
+
+    self.frame_idx = 0
+    print(f"Whack, has sound? { getattr(self.game, 'splash_sound') }")
+
+    self.sound = getattr(self.game, sound_name)
+    self.textures = arcade.load_spritesheet(
+      filename,
+      32, 32, 
+      4, 4
+    )
+    self.collision_radius = 16 # 32/2
+    self.hit_box = [ # an octogon ~16px in radius
+      [5,-11],
+      [-5,-11],
+      [-11,-5],
+      [-11,5],
+      [-5,11],
+      [5,11],
+      [11,5],
+      [11,-5],
+    ]
+    self.fps = 16
+    self.elapsed = 0
+    self.texture = self.textures[self.frame_idx]
+    self.done_index = len(self.textures)
+
+  def on_update(self, dt):
+    if self.frame_idx >= self.done_index:
+      self.kill()
+      return
+    if self.elapsed == 0:
+      arcade.play_sound(self.sound, SOUND_FX_VOLUME)
+    self.elapsed += dt
+    self.frame_idx = min(self.done_index, -1 + math.floor(self.elapsed / (1/self.fps)))
+    if self.frame_idx == self.done_index:
+      self.texture = empty_32x32
+      # print(f"Whack update, using empty texture with frame_idx {self.frame_idx}")
+    else:
+      # print(f"Whack update, elapsed {self.elapsed} of fps {self.fps}, using texture with frame? {math.floor(self.elapsed / (1/self.fps))}, frame_idx {self.frame_idx}")
+      self.texture = self.textures[self.frame_idx]
+
+class Tool():
+  def __init__(self, owner, *args):
+    self.owner = owner
+    self.radius = 100
+    self.arc = 90
+    self.color = [255,0,0]
+    self.center_x = 0
+    self.center_y = 0
+    self.cooldown = 0
+    self.range = 30
+    print(f"Tool init, game: {self.owner.game.name}")
+
+  def on_update(self, dt):
+    self.cooldown = max(0, self.cooldown - dt)
+
+  def can_use(self, pt, direction):
+    print(f"can_use, current cooldown: {self.cooldown}")
+    return self.cooldown == 0
+
+  def use_at_point(self, pt, direction):
+    self.cooldown = 1.0 # seconds
+    print(f"use_at_point, game: {self.owner.game.name}")
+    whack = Whack("../resources/green-explosion.png", "splash_sound", self.owner.game)
+    x = pt.x + self.range * direction.x
+    y = pt.y + self.range * direction.y
+    print(f"use_at_point: direction: {direction.x}, {direction.y}; result: {x}, {y} from {pt.x},{pt.y}")
+    whack.center_x = x
+    whack.center_y = y
+    return whack
 
 class TextLabel():
   def __init__(self, text, start_x, start_y):
@@ -129,6 +235,8 @@ class MyGame(arcade.Window):
       # Call the parent class initializer
       super().__init__(width, height, title)
 
+      self.name = "The Game"
+
       # Variables that will hold sprite lists
       self.player_sprite_list = None
 
@@ -155,6 +263,8 @@ class MyGame(arcade.Window):
       self.wall_list = arcade.SpriteList()
       self.target_list = arcade.SpriteList()
 
+      self.attack_list = arcade.SpriteList()
+
       # Set up the player
       self.setup_player()
       self.score = TextLabel("Score: 0   ", 80, 6)
@@ -165,11 +275,14 @@ class MyGame(arcade.Window):
       self.setup_walls()
       self.setup_targets()
 
+      self.splash_sound = arcade.load_sound("../resources/splash.wav")
+
       self.physics_engine = arcade.PhysicsEngineSimple(self.player_sprite,
                                                        self.wall_list)
 
     def setup_player(self):
-      self.player_sprite = Player()
+      self.player_sprite = Player(self)
+      self.player_sprite.game = self
       self.player_sprite.center_x = SCREEN_WIDTH / 2
       self.player_sprite.center_y = SCREEN_HEIGHT / 2
       self.player_sprite_list.append(self.player_sprite)
@@ -222,7 +335,6 @@ class MyGame(arcade.Window):
       self.place_puddle(60, 60)
       self.place_puddle(700, 100)
 
-
     def on_draw(self):
       # This command has to happen before we start drawing
       self.clear()
@@ -230,24 +342,30 @@ class MyGame(arcade.Window):
       # Draw all the sprites.
       self.terrain_list.draw()
       self.wall_list.draw()
-      self.player_sprite_list.draw()
       self.target_list.draw()
+      self.player_sprite_list.draw()
+      self.attack_list.draw()
       self.score.draw()
       self.fps.draw()
+      if DEBUG:
+        for attack in self.attack_list:
+          attack.draw_hit_box()
 
 
     def on_update(self, delta_time):
       """ Movement and game logic """
-      self.player_sprite_list.update()
+      self.player_sprite_list.on_update(delta_time)
       self.physics_engine.update()
+      self.attack_list.on_update(delta_time)
 
-      target_hits = self.player_sprite.collides_with_list(self.target_list)
-      for target in target_hits:
-        print(f"hit a target: {type(target).__name__}")
-        self.target_list.remove(target)
-        self.player_sprite.score += 1
-        if isinstance(target, GroundSplat):
-          self.place_grass(target.center_x, target.center_y)
+      for attack in self.attack_list:
+        target_hits = arcade.check_for_collision_with_list(attack, self.target_list)
+        for target in target_hits:
+          print(f"hit a target: {type(target).__name__}")
+          self.target_list.remove(target)
+          self.player_sprite.score += 1
+          if isinstance(target, GroundSplat):
+            self.place_grass(target.center_x, target.center_y)
 
       # post-update
       self.player_sprite.post_update()
@@ -282,6 +400,8 @@ class MyGame(arcade.Window):
           self.left_pressed = True
       elif key == arcade.key.RIGHT:
           self.right_pressed = True
+      elif key == arcade.key.SPACE:
+          self.player_sprite.tool_active = True
       self.update_player_speed()
 
     def on_key_release(self, key, modifiers):
@@ -293,11 +413,14 @@ class MyGame(arcade.Window):
           self.left_pressed = False
       elif key == arcade.key.RIGHT:
           self.right_pressed = False
+      elif key == arcade.key.SPACE:
+          self.player_sprite.tool_active = False
+
       self.update_player_speed()
 
 def main():
     """ Main function """
-    window = MyGame(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE)
+    g_game = window = MyGame(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE)
     window.setup()
     arcade.enable_timings()
     arcade.run()
