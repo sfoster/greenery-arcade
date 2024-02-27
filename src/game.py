@@ -3,6 +3,7 @@ Prototype of a simple cleanup / castle-defense game
 """
 
 import arcade
+import arcade.gui
 import math
 from pyglet.math import Vec2
 from PIL import Image
@@ -70,8 +71,15 @@ class Player(SpriteEntity):
 
     self.score = 0;
 
-    self.tool = Tool(self, self.game)
+    self.tool = Tool(self, "shovel", arcade.load_texture("../resources/shovel.png"))
+    self.alt_tool = Tool(self, "shovel", arcade.load_texture("../resources/seedbag.png"))
     self.tool_active = False
+
+  def setup_ui(self, ui):
+    ui.hotbar.add(self.tool.ui)
+    ui.hotbar.add(self.alt_tool.ui)
+    print(f"setup tool of type : {type(self.tool.ui).__name__}")
+
 
   def get_position_v2(self):
     return Vec2(self.center_x, self.center_y)
@@ -176,7 +184,7 @@ class Whack(SpriteEntity):
       self.texture = self.textures[self.frame_idx]
 
 class Tool():
-  def __init__(self, owner, *args):
+  def __init__(self, owner, id, button_texture):
     self.owner = owner
     self.radius = 100
     self.arc = 90
@@ -185,7 +193,15 @@ class Tool():
     self.center_y = 0
     self.cooldown = 0
     self.range = 30
-    print(f"Tool init, game: {self.owner.game.name}")
+
+    button = arcade.gui.UITextureButton(texture=button_texture)
+    self.ui = arcade.gui.UIBorder(
+      child=button,
+      border_color=arcade.color.AQUA,
+    )
+    # How to update the border color on the fly? 
+    # self.ui.color = (255, 0, 0)
+    print(f"Tool init, ui: {vars(self.ui)}")
 
   def on_update(self, dt):
     self.cooldown = max(0, self.cooldown - dt)
@@ -237,6 +253,10 @@ class MyGame(arcade.Window):
 
       self.name = "The Game"
 
+       # a UIManager to handle the UI.
+      self.manager = arcade.gui.UIManager()
+      self.manager.enable()
+
       # Variables that will hold sprite lists
       self.player_sprite_list = None
 
@@ -267,8 +287,15 @@ class MyGame(arcade.Window):
 
       # Set up the player
       self.setup_player()
-      self.score = TextLabel("Score: 0   ", 80, 6)
-      self.fps = TextLabel("00", 6, 6)
+
+      # Setup the UI
+      self.ui = GameUI(self.width, self.height)
+
+      # Create a widget to hold the toolbar widget, that will center the buttons
+      self.manager.add(
+        self.ui.anchor
+      )
+      self.player_sprite.setup_ui(self.ui)
 
       # Set up the level's walls etc.
       self.setup_terrain()
@@ -311,7 +338,6 @@ class MyGame(arcade.Window):
     def setup_terrain(self):
       self.place_grass(100, 400)
 
-
     def setup_walls(self):
       # -- Set up the walls
       # Create a row of boxes
@@ -345,12 +371,15 @@ class MyGame(arcade.Window):
       self.target_list.draw()
       self.player_sprite_list.draw()
       self.attack_list.draw()
-      self.score.draw()
-      self.fps.draw()
       if DEBUG:
         for attack in self.attack_list:
           attack.draw_hit_box()
 
+      arcade.draw_lrtb_rectangle_filled(
+        left=0, right=self.width, top=44, bottom=0,
+        color=arcade.color.DARK_JUNGLE_GREEN
+      )
+      self.manager.draw()
 
     def on_update(self, delta_time):
       """ Movement and game logic """
@@ -370,8 +399,9 @@ class MyGame(arcade.Window):
       # post-update
       self.player_sprite.post_update()
 
-      self.score.update(f"Score: {self.player_sprite.score}")
-      self.fps.update( f"{arcade.get_fps():.0f}" )
+      self.ui.score.text = f"Score: {self.player_sprite.score}"
+      self.ui.fps.text = f"FPS: {arcade.get_fps():.0f}"
+      self.player_sprite.tool.ui.border_color = arcade.color.AQUA
 
 
     def update_player_speed(self):
@@ -417,6 +447,47 @@ class MyGame(arcade.Window):
           self.player_sprite.tool_active = False
 
       self.update_player_speed()
+
+class GameUI():
+  def __init__(self, width, height):
+    toolbar = arcade.gui.UIBoxLayout(
+      x=0, y=0, 
+      vertical=False,
+      space_between=20
+    )
+    self.toolbar = toolbar
+
+    fps = arcade.gui.UILabel(
+      text="FPS: 00",
+      text_color=[255,255,255],
+      align="right"
+    )
+    self.fps = fps
+    toolbar.add(fps.with_space_around(right=20))
+
+    score = arcade.gui.UILabel(
+      #width=60, height=48, 
+      text="Score: 0",
+      text_color=[255,255,255],
+      align="right"
+    )
+    self.score = score
+    toolbar.add(score.with_space_around(right=20))
+
+    hotbar = arcade.gui.UIBoxLayout(
+      x=0, y=0, 
+      vertical=False,
+    )
+    self.hotbar = hotbar
+    toolbar.add(hotbar.with_space_around(right=20))
+
+    self.anchor = arcade.gui.UIAnchorWidget(
+        anchor_x="left",
+        anchor_y="bottom",
+        align_x=8,
+        align_y=4,
+        child=toolbar
+    )
 
 def main():
     """ Main function """
