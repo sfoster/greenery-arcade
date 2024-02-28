@@ -29,7 +29,6 @@ FACING_SOUTH = 2
 FACING_WEST = 3
 
 empty_32x32 = arcade.Texture("empty_32x32", Image.new("RGBA", (32,32), color=(0,0,0,0)))
-g_game = None
 
 def get_facing_vec2(entity):
   direction = Vec2()
@@ -246,13 +245,46 @@ class TextLabel():
     self.back.draw()
     self.text.draw()
 
-class MyGame(arcade.Window):
-    def __init__(self, width, height, title):
+class MenuView(arcade.View):
+  def on_show_view(self):
+      arcade.set_background_color(arcade.color.WHITE)
+
+  def on_draw(self):
+      self.clear()
+      arcade.draw_text("Menu Screen", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2,
+                       arcade.color.BLACK, font_size=50, anchor_x="center")
+      arcade.draw_text("Click to advance.", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 75,
+                       arcade.color.GRAY, font_size=20, anchor_x="center")
+
+  def on_mouse_press(self, _x, _y, _button, _modifiers):
+      game = GameView()
+      self.window.show_view(game)
+
+class GameOverView(arcade.View):
+  def __init__(self, game_view):
+      super().__init__()
+      self.game_view = game_view
+
+  def on_show_view(self):
+      arcade.set_background_color(arcade.color.AVOCADO)
+
+  def on_draw(self):
+      self.clear()
+      arcade.draw_text("Game Over", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2,
+                       arcade.color.BLACK, font_size=50, anchor_x="center")
+      arcade.draw_text(f"Score: {self.game_view.player_sprite.score}", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 75,
+                       arcade.color.BLACK, font_size=30, anchor_x="center")
+
+class GameWindow(arcade.Window):
+  def __init__(self, width, height, title):
       # Call the parent class initializer
       super().__init__(width, height, title)
 
-      self.name = "The Game"
+class GameView(arcade.View):
+  def __init__(self):
+      super().__init__()
 
+      self.name = "The GameView"
        # a UIManager to handle the UI.
       self.manager = arcade.gui.UIManager()
       self.manager.enable()
@@ -265,17 +297,22 @@ class MyGame(arcade.Window):
 
       self.wall_list = None
 
-      # Set the background color
-      arcade.set_background_color(arcade.color.AMAZON)
-
       # Track the current state of what key is pressed
       self.left_pressed = False
       self.right_pressed = False
       self.up_pressed = False
       self.down_pressed = False
 
-    def setup(self):
+      self.width = SCREEN_WIDTH
+      self.height = SCREEN_HEIGHT
+
+      self.setup()
+
+  def setup(self):
       """ Set up the game and initialize the variables. """
+
+      # Set the background color
+      arcade.set_background_color(arcade.color.AMAZON)
 
       # Sprite lists
       self.player_sprite_list = arcade.SpriteList()
@@ -307,14 +344,14 @@ class MyGame(arcade.Window):
       self.physics_engine = arcade.PhysicsEngineSimple(self.player_sprite,
                                                        self.wall_list)
 
-    def setup_player(self):
+  def setup_player(self):
       self.player_sprite = Player(self)
       self.player_sprite.game = self
       self.player_sprite.center_x = SCREEN_WIDTH / 2
       self.player_sprite.center_y = SCREEN_HEIGHT / 2
       self.player_sprite_list.append(self.player_sprite)
 
-    def place_grass(self, center_x, center_y):
+  def place_grass(self, center_x, center_y):
       TERRAIN_TILE_SCALE = 2;
       grass = arcade.Sprite("../resources/grass_tileset_16x16.png",
                              TERRAIN_TILE_SCALE, 
@@ -325,7 +362,7 @@ class MyGame(arcade.Window):
       grass.center_y = center_y
       self.terrain_list.append(grass)
 
-    def place_puddle(self, center_x, center_y):
+  def place_puddle(self, center_x, center_y):
       puddle = GroundSplat("../resources/grass_tileset_16x16.png",
                              1, 
                              0,144, # x, y offsets into the tileset
@@ -335,10 +372,10 @@ class MyGame(arcade.Window):
       puddle.center_y = center_y
       self.target_list.append(puddle)
 
-    def setup_terrain(self):
+  def setup_terrain(self):
       self.place_grass(100, 400)
 
-    def setup_walls(self):
+  def setup_walls(self):
       # -- Set up the walls
       # Create a row of boxes
       for x in range(173, 650, 64):
@@ -356,12 +393,15 @@ class MyGame(arcade.Window):
           wall.center_y = y
           self.wall_list.append(wall)
 
-    def setup_targets(self):
+  def setup_targets(self):
       self.place_puddle(100, 400)
       self.place_puddle(60, 60)
       self.place_puddle(700, 100)
 
-    def on_draw(self):
+  def on_show_view(self):
+        arcade.set_background_color(arcade.color.AMAZON)
+
+  def on_draw(self):
       # This command has to happen before we start drawing
       self.clear()
 
@@ -381,8 +421,14 @@ class MyGame(arcade.Window):
       )
       self.manager.draw()
 
-    def on_update(self, delta_time):
+  def on_update(self, delta_time):
       """ Movement and game logic """
+
+      if not len(self.target_list):
+        gameover = GameOverView(self)
+        self.window.show_view(gameover)
+        return
+
       self.player_sprite_list.on_update(delta_time)
       self.physics_engine.update()
       self.attack_list.on_update(delta_time)
@@ -404,7 +450,7 @@ class MyGame(arcade.Window):
       self.player_sprite.tool.ui.border_color = arcade.color.AQUA
 
 
-    def update_player_speed(self):
+  def update_player_speed(self):
       # Calculate speed based on the keys pressed
       direction = Vec2(0, 0)
 
@@ -421,7 +467,7 @@ class MyGame(arcade.Window):
       self.player_sprite.change_x = scaled_change.x
       self.player_sprite.change_y = scaled_change.y
 
-    def on_key_press(self, key, modifiers):
+  def on_key_press(self, key, modifiers):
       if key == arcade.key.UP:
           self.up_pressed = True
       elif key == arcade.key.DOWN:
@@ -434,7 +480,7 @@ class MyGame(arcade.Window):
           self.player_sprite.tool_active = True
       self.update_player_speed()
 
-    def on_key_release(self, key, modifiers):
+  def on_key_release(self, key, modifiers):
       if key == arcade.key.UP:
           self.up_pressed = False
       elif key == arcade.key.DOWN:
@@ -491,9 +537,10 @@ class GameUI():
 
 def main():
     """ Main function """
-    g_game = window = MyGame(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE)
-    window.setup()
+    window = GameWindow(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE)
+    menu_view = MenuView()
     arcade.enable_timings()
+    window.show_view(menu_view)
     arcade.run()
 
 
