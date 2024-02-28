@@ -9,15 +9,11 @@ from pyglet.math import Vec2
 from PIL import Image
 from copy import deepcopy
 
+from settings import *
+
 DEBUG = False
 SPRITE_SCALING = 4
 SPRITE_SCALING = 0.5
-
-SOUND_FX_VOLUME = 0.8
-
-SCREEN_WIDTH = 800
-SCREEN_HEIGHT = 600
-SCREEN_TITLE = "Work-in-progress"
 
 MOVEMENT_SPEED = 4
 TRAVEL_PER_WALK_FRAME = 8
@@ -48,9 +44,10 @@ class SpriteEntity(arcade.Sprite):
     super(SpriteEntity, self).__init__(*args)
 
 class Player(SpriteEntity):
-  def __init__(self, *args):
-    super(Player, self).__init__(*args)
+  def __init__(self, *args, **kwargs):
+    super(Player, self).__init__(*args, **kwargs)
     # The player sprite should be scaled up unlike the others
+    self.hit_box = [[-6, -7], [6, -7], [6, 5], [-6, 5]]
     self.scale = 4
     self.frame_idx = 0
     self.previous_posn = Vec2()
@@ -73,6 +70,7 @@ class Player(SpriteEntity):
     self.tool = Tool(self, "shovel", arcade.load_texture("../resources/shovel.png"))
     self.alt_tool = Tool(self, "shovel", arcade.load_texture("../resources/seedbag.png"))
     self.tool_active = False
+    print(f"Player width: {self.width}, height: {self.height}")
 
   def setup_ui(self, ui):
     ui.hotbar.add(self.tool.ui)
@@ -87,7 +85,7 @@ class Player(SpriteEntity):
     posn = self.get_position_v2()
     if self.tool and self.tool.can_use(posn, direction):
       print(f"apply_tool, game: {self.game.name}")
-      self.game.attack_list.append(self.tool.use_at_point(posn, direction))
+      self.game.level.attack_list.append(self.tool.use_at_point(posn, direction))
 
   def on_update(self, dt):
     self.previous_posn = self.get_position_v2()
@@ -134,8 +132,8 @@ class Player(SpriteEntity):
       # print(f"facing: {self.facing}, frame_idx: {self.frame_idx}, len: {len(self.texture_direction[self.facing])}")
 
 class GroundSplat(arcade.Sprite):
-  def __init__(self, *args):
-      super(GroundSplat, self).__init__(*args)
+  def __init__(self, *args, **kw):
+      super(GroundSplat, self).__init__(*args, **kw)
 
 class Whack(SpriteEntity):
   def __init__(self, filename, sound_name, *args):
@@ -272,7 +270,7 @@ class GameOverView(arcade.View):
       self.clear()
       arcade.draw_text("Game Over", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2,
                        arcade.color.BLACK, font_size=50, anchor_x="center")
-      arcade.draw_text(f"Score: {self.game_view.player_sprite.score}", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 75,
+      arcade.draw_text(f"Score: {self.game_view.player.score}", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 75,
                        arcade.color.BLACK, font_size=30, anchor_x="center")
 
 class GameWindow(arcade.Window):
@@ -289,13 +287,10 @@ class GameView(arcade.View):
       self.manager = arcade.gui.UIManager()
       self.manager.enable()
 
-      # Variables that will hold sprite lists
-      self.player_sprite_list = None
+      self.level = None
 
       # Set up the player info
-      self.player_sprite = None
-
-      self.wall_list = None
+      self.player = None
 
       # Track the current state of what key is pressed
       self.left_pressed = False
@@ -306,6 +301,13 @@ class GameView(arcade.View):
       self.width = SCREEN_WIDTH
       self.height = SCREEN_HEIGHT
 
+      # Used in scrolling
+      self.view_bottom = 0
+      self.view_left = 0
+
+      self.camera_sprites = arcade.Camera(SCREEN_WIDTH, SCREEN_HEIGHT)
+      self.camera_gui = arcade.Camera(SCREEN_WIDTH, SCREEN_HEIGHT)
+
       self.setup()
 
   def setup(self):
@@ -314,16 +316,10 @@ class GameView(arcade.View):
       # Set the background color
       arcade.set_background_color(arcade.color.AMAZON)
 
-      # Sprite lists
-      self.player_sprite_list = arcade.SpriteList()
-      self.terrain_list = arcade.SpriteList()
-      self.wall_list = arcade.SpriteList()
-      self.target_list = arcade.SpriteList()
-
-      self.attack_list = arcade.SpriteList()
-
       # Set up the player
       self.setup_player()
+
+      self.level = LevelMap(LEVEL_MAP, self.player)
 
       # Setup the UI
       self.ui = GameUI(self.width, self.height)
@@ -332,24 +328,16 @@ class GameView(arcade.View):
       self.manager.add(
         self.ui.anchor
       )
-      self.player_sprite.setup_ui(self.ui)
-
-      # Set up the level's walls etc.
-      self.setup_terrain()
-      self.setup_walls()
-      self.setup_targets()
+      self.player.setup_ui(self.ui)
 
       self.splash_sound = arcade.load_sound("../resources/splash.wav")
 
-      self.physics_engine = arcade.PhysicsEngineSimple(self.player_sprite,
-                                                       self.wall_list)
+      self.physics_engine = arcade.PhysicsEngineSimple(self.player,
+                                                       self.level.wall_list)
 
   def setup_player(self):
-      self.player_sprite = Player(self)
-      self.player_sprite.game = self
-      self.player_sprite.center_x = SCREEN_WIDTH / 2
-      self.player_sprite.center_y = SCREEN_HEIGHT / 2
-      self.player_sprite_list.append(self.player_sprite)
+      self.player = Player(self)
+      self.player.game = self
 
   def place_grass(self, center_x, center_y):
       TERRAIN_TILE_SCALE = 2;
@@ -360,94 +348,107 @@ class GameView(arcade.View):
                            )
       grass.center_x = center_x
       grass.center_y = center_y
-      self.terrain_list.append(grass)
-
-  def place_puddle(self, center_x, center_y):
-      puddle = GroundSplat("../resources/grass_tileset_16x16.png",
-                             1, 
-                             0,144, # x, y offsets into the tileset
-                             64,64, # width, height
-                           )
-      puddle.center_x = center_x
-      puddle.center_y = center_y
-      self.target_list.append(puddle)
-
-  def setup_terrain(self):
-      self.place_grass(100, 400)
-
-  def setup_walls(self):
-      # -- Set up the walls
-      # Create a row of boxes
-      for x in range(173, 650, 64):
-          wall = arcade.Sprite(":resources:images/tiles/boxCrate_double.png",
-                               SPRITE_SCALING)
-          wall.center_x = x
-          wall.center_y = 200
-          self.wall_list.append(wall)
-
-      # Create a column of boxes
-      for y in range(273, 500, 64):
-          wall = arcade.Sprite(":resources:images/tiles/boxCrate_double.png",
-                               SPRITE_SCALING)
-          wall.center_x = 465
-          wall.center_y = y
-          self.wall_list.append(wall)
-
-  def setup_targets(self):
-      self.place_puddle(100, 400)
-      self.place_puddle(60, 60)
-      self.place_puddle(700, 100)
+      self.level.terrain_list.append(grass)
 
   def on_show_view(self):
-        arcade.set_background_color(arcade.color.AMAZON)
+      arcade.set_background_color(arcade.color.AMAZON)
+
+  def scroll_to_player(self):
+      """
+      Scroll the window to the player.
+      This method will attempt to keep the player at least VIEWPORT_MARGIN
+      pixels away from the edge.
+
+      if CAMERA_SPEED is 1, the camera will immediately move to the desired position.
+      Anything between 0 and 1 will have the camera move to the location with a smoother
+      pan.
+      """
+
+      # --- Manage Scrolling ---
+
+      # Scroll left
+      left_boundary = self.view_left + VIEWPORT_MARGIN
+      if self.player.left < left_boundary:
+          self.view_left -= left_boundary - self.player.left
+
+      # Scroll right
+      right_boundary = self.view_left + self.width - VIEWPORT_MARGIN
+      if self.player.right > right_boundary:
+          self.view_left += self.player.right - right_boundary
+
+      # Scroll up
+      top_boundary = self.view_bottom + self.height - VIEWPORT_MARGIN
+      if self.player.top > top_boundary:
+          self.view_bottom += self.player.top - top_boundary
+
+      # Scroll down
+      bottom_boundary = self.view_bottom + VIEWPORT_MARGIN
+      if self.player.bottom < bottom_boundary:
+          self.view_bottom -= bottom_boundary - self.player.bottom
+
+      # Scroll to the proper location
+      position = self.view_left, self.view_bottom
+      self.camera_sprites.move_to(position, CAMERA_SPEED)
 
   def on_draw(self):
       # This command has to happen before we start drawing
       self.clear()
+      # Select the camera we'll use to draw all our sprites
+      self.camera_sprites.use()
 
-      # Draw all the sprites.
-      self.terrain_list.draw()
-      self.wall_list.draw()
-      self.target_list.draw()
-      self.player_sprite_list.draw()
-      self.attack_list.draw()
+      self.draw_list = arcade.SpriteList()
+
+      # Draw all the sprites
+      self.level.terrain_list.draw()
+      self.level.target_list.draw()
+      self.draw_list.extend(self.level.wall_list)
+      self.draw_list.extend(self.level.player_list)
+      self.draw_list.extend(self.level.attack_list)
+
+      self.draw_list.sort(key=lambda x: x.position[1], reverse=True)
+      self.draw_list.draw()
+
       if DEBUG:
-        for attack in self.attack_list:
+        self.player.draw_hit_box()
+        for attack in self.level.attack_list:
           attack.draw_hit_box()
 
       arcade.draw_lrtb_rectangle_filled(
         left=0, right=self.width, top=44, bottom=0,
         color=arcade.color.DARK_JUNGLE_GREEN
       )
+
       self.manager.draw()
 
   def on_update(self, delta_time):
       """ Movement and game logic """
 
-      if not len(self.target_list):
+      if not len(self.level.target_list):
         gameover = GameOverView(self)
         self.window.show_view(gameover)
         return
 
-      self.player_sprite_list.on_update(delta_time)
+      self.level.player_list.on_update(delta_time)
       self.physics_engine.update()
-      self.attack_list.on_update(delta_time)
+      self.level.attack_list.on_update(delta_time)
 
-      for attack in self.attack_list:
-        target_hits = arcade.check_for_collision_with_list(attack, self.target_list)
+      for attack in self.level.attack_list:
+        target_hits = arcade.check_for_collision_with_list(attack, self.level.target_list)
         for target in target_hits:
           print(f"hit a target: {type(target).__name__}")
-          self.target_list.remove(target)
-          self.player_sprite.score += 1
+          self.level.target_list.remove(target)
+          self.player.score += 1
           if isinstance(target, GroundSplat):
             self.place_grass(target.center_x, target.center_y)
 
       # post-update
-      self.player_sprite.post_update()
+      self.player.post_update()
 
-      self.ui.score.text = f"Score: {self.player_sprite.score}"
+      self.scroll_to_player()
+
+      self.ui.score.text = f"Score: {self.player.score}"
       self.ui.fps.text = f"FPS: {arcade.get_fps():.0f}"
-      self.player_sprite.tool.ui.border_color = arcade.color.AQUA
+      self.player.tool.ui.border_color = arcade.color.AQUA
 
 
   def update_player_speed(self):
@@ -464,8 +465,8 @@ class GameView(arcade.View):
           direction.x = 1
       scaled_change = direction.from_magnitude(MOVEMENT_SPEED)
       # scale the movement so we get equal speed on diagonals
-      self.player_sprite.change_x = scaled_change.x
-      self.player_sprite.change_y = scaled_change.y
+      self.player.change_x = scaled_change.x
+      self.player.change_y = scaled_change.y
 
   def on_key_press(self, key, modifiers):
       if key == arcade.key.UP:
@@ -477,7 +478,7 @@ class GameView(arcade.View):
       elif key == arcade.key.RIGHT:
           self.right_pressed = True
       elif key == arcade.key.SPACE:
-          self.player_sprite.tool_active = True
+          self.player.tool_active = True
       self.update_player_speed()
 
   def on_key_release(self, key, modifiers):
@@ -490,7 +491,7 @@ class GameView(arcade.View):
       elif key == arcade.key.RIGHT:
           self.right_pressed = False
       elif key == arcade.key.SPACE:
-          self.player_sprite.tool_active = False
+          self.player.tool_active = False
 
       self.update_player_speed()
 
@@ -534,6 +535,40 @@ class GameUI():
         align_y=4,
         child=toolbar
     )
+
+class LevelMap():
+  def __init__(self, map_data, player):
+    self.player = player
+
+    # Variables that will hold sprite lists
+    self.player_list = arcade.SpriteList()
+    self.terrain_list = arcade.SpriteList()
+    self.wall_list = arcade.SpriteList()
+    self.target_list = arcade.SpriteList()
+    self.attack_list = arcade.SpriteList()
+
+    last_y = len(map_data)
+    for row_index,line, in enumerate(map_data):
+      y = (last_y - row_index) * TILESIZE
+      for col_index,c in enumerate(line):
+        x = col_index * TILESIZE
+        if c == "X": 
+          wall = arcade.Sprite(":resources:images/tiles/boxCrate_double.png",
+                               SPRITE_SCALING, center_x=x, center_y=y)
+          # wall.center_x = x
+          # wall.center_y = 200
+          self.wall_list.append(wall)
+        elif c == "S": 
+          puddle = GroundSplat("../resources/grass_tileset_16x16.png",
+                                 1, 
+                                 0,144, # x, y offsets into the tileset
+                                 64,64, # width, height
+                                 center_x=x, center_y=y)
+          self.target_list.append(puddle)
+        elif c == "P": 
+          player.center_x = x
+          player.center_y = y
+          self.player_list.append(self.player)
 
 def main():
     """ Main function """
